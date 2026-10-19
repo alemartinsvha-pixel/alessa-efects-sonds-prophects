@@ -2,6 +2,18 @@
 
 Complemento gratuito e de código aberto para o leitor de telas **NVDA** que acrescenta efeitos sonoros originais, com piano, pads e bateria suave, enquanto você navega pelo computador.
 
+## Conjuntos de sons
+
+Na janela de configurações há uma caixa combinada **Conjunto de sons** com cinco opções, todas com sons originais criados para este projeto:
+
+- **Profético:** piano e pads com eco, com bateria suave ao digitar (padrão).
+- **Somente pads:** só texturas suaves de pad, sem piano.
+- **Piano com reverb intenso:** notas de piano com eco longo.
+- **Celular clássico:** bipes e cliques eletrônicos curtos, no estilo de celulares antigos.
+- **Smartphone moderno:** toques suaves e cristalinos, no estilo de celulares atuais.
+
+Os sons deste projeto são originais e inspirados apenas no estilo. Não são cópias de sons de nenhum sistema ou fabricante.
+
 ## O que ele faz
 
 - **Abrir programas e janelas:** nota de piano com eco.
@@ -29,7 +41,7 @@ Você pode mudar os atalhos em Preferências, Comandos de entrada, categoria "Al
 
 ## Trocar um som
 
-Os sons ficam na pasta `sons`, em formato WAV. Para usar um som seu, substitua o arquivo com o mesmo nome. O script `gerar_sons.py` mostra como os sons originais foram sintetizados (Python com NumPy).
+Os sons do conjunto profético ficam na pasta `sons`, e os dos outros conjuntos em subpastas de `sons`, em formato WAV. Para criar um conjunto novo, crie uma subpasta com os mesmos nomes de arquivo e acrescente a pasta na lista `TEMAS` do arquivo do plugin. Para usar um som seu, substitua o arquivo com o mesmo nome. Os scripts `gerar_sons.py` e `gerar_temas.py` mostram como os sons foram sintetizados (Python com NumPy).
 
 ## Limitações conhecidas
 

@@ -1,0 +1,5 @@
+Pacote de envio 1.1.0 para o GitHub
+Cada pasta vai para um endereco diferente (veja as instrucoes na conversa).
+Arquivos com o mesmo nome de antes sao substituidos pelo GitHub.
+Os sons do tema profetico ja estao no repositorio e nao mudam.
+O arquivo .nvda-addon NAO vai no repositorio: ele vai anexado na Release.

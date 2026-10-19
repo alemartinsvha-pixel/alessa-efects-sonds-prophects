@@ -36,7 +36,19 @@ LETRAS = ["letra1", "letra2", "letra3", "letra4"]  # sons sorteados ao digitar l
 INTERVALO_MINIMO = 0.02  # segundos entre dois sons de digitacao
 INTERVALO_FOCO = 0.05    # segundos minimos entre dois sons de foco
 
-# Tipo de elemento -> arquivo de som. Para mudar o som de um tipo, troque o nome do arquivo.
+# Conjuntos de sons: (pasta, nome mostrado na caixa combinada).
+# O primeiro, "profetico", usa os arquivos que ficam direto na pasta sons.
+# Os outros usam sons/<pasta>. Para criar um tema novo, crie a pasta com os mesmos nomes de arquivo.
+TEMAS = [
+    ("profetico", "Profético: piano e pads com eco (padrão)"),
+    ("pads", "Somente pads"),
+    ("piano_reverb", "Piano com reverb intenso"),
+    ("celular_classico", "Celular clássico: bipes eletrônicos"),
+    ("smartphone", "Smartphone moderno: toques suaves"),
+]
+TEMA_PADRAO = "profetico"
+
+# Tipo de elemento -> arquivo de som.
 _ROLES = [
     ("BUTTON", "botao"), ("TOGGLEBUTTON", "botao"), ("SPLITBUTTON", "botao"), ("MENUBUTTON", "botao"),
     ("LINK", "link"),
@@ -63,6 +75,7 @@ config.conf.spec[SECAO] = {
     "digitacao": "boolean(default=True)",
     "enter": "boolean(default=True)",
     "foco": "boolean(default=True)",
+    "tema": 'string(default="profetico")',
 }
 
 # Mudancas temporarias feitas pelos atalhos (voltam ao normal ao reiniciar o NVDA)
@@ -73,35 +86,48 @@ def _conf():
     return config.conf[SECAO]
 
 
-def aplicarVolume(volume=None):
-    """Cria copias dos sons com o volume escolhido (o NVDA toca arquivos prontos)."""
+def _temaValido(tema):
+    return tema if tema in dict(TEMAS) else TEMA_PADRAO
+
+
+def _pastaTema(tema):
+    tema = _temaValido(tema)
+    return _PASTA if tema == TEMA_PADRAO else os.path.join(_PASTA, tema)
+
+
+def aplicarVolume(volume=None, tema=None):
+    """Cria copias dos sons do tema com o volume escolhido (o NVDA toca arquivos prontos)."""
     if _CACHE is None:
         return
     try:
+        tema = _temaValido(_conf()["tema"] if tema is None else tema)
         fator = (_conf()["volume"] if volume is None else volume) / 100.0
-        os.makedirs(_CACHE, exist_ok=True)
-        for nome in os.listdir(_PASTA):
+        origem = _pastaTema(tema)
+        destino = os.path.join(_CACHE, tema)
+        os.makedirs(destino, exist_ok=True)
+        for nome in os.listdir(origem):
             if not nome.lower().endswith(".wav"):
                 continue
-            with wave.open(os.path.join(_PASTA, nome), "rb") as w:
+            with wave.open(os.path.join(origem, nome), "rb") as w:
                 params = w.getparams()
                 dados = w.readframes(w.getnframes())
             amostras = array.array("h")
             amostras.frombytes(dados)
             escalado = array.array("h", (int(a * fator) for a in amostras))
-            with wave.open(os.path.join(_CACHE, nome), "wb") as w:
+            with wave.open(os.path.join(destino, nome), "wb") as w:
                 w.setparams(params)
                 w.writeframes(escalado.tobytes())
     except Exception:
         log.error("Alessa Effects: erro ao aplicar o volume", exc_info=True)
 
 
-def tocar(nome):
+def tocar(nome, tema=None):
     try:
+        tema = _temaValido(_conf()["tema"] if tema is None else tema)
         arquivo = nome + ".wav"
-        caminho = os.path.join(_CACHE, arquivo) if _CACHE else ""
+        caminho = os.path.join(_CACHE, tema, arquivo) if _CACHE else ""
         if not (caminho and os.path.isfile(caminho)):
-            caminho = os.path.join(_PASTA, arquivo)
+            caminho = os.path.join(_pastaTema(tema), arquivo)
         nvwave.playWaveFile(caminho, asynchronous=True)
     except Exception:
         log.debugWarning("Alessa Effects: nao foi possivel tocar %s" % nome, exc_info=True)
@@ -115,32 +141,43 @@ class PainelAlessa(SettingsPanel):
         ajuda = guiHelper.BoxSizerHelper(self, sizer=settingsSizer)
         self.cbLigado = ajuda.addItem(wx.CheckBox(self, label="Ativar efeitos sonoros"))
         self.cbLigado.SetValue(c["ligado"])
+        self.escolhaTema = ajuda.addLabeledControl(
+            "Conjunto de sons:", wx.Choice, choices=[nome for _, nome in TEMAS]
+        )
+        ids = [i for i, _ in TEMAS]
+        self.escolhaTema.SetSelection(ids.index(_temaValido(c["tema"])))
         self.spinVolume = ajuda.addLabeledControl(
             "Volume dos efeitos (0 a 100):", wx.SpinCtrl, min=0, max=100, initial=c["volume"]
         )
-        self.cbAbertura = ajuda.addItem(wx.CheckBox(self, label="Som ao abrir programas e janelas (piano)"))
+        self.cbAbertura = ajuda.addItem(wx.CheckBox(self, label="Som ao abrir programas e janelas"))
         self.cbAbertura.SetValue(c["abertura"])
-        self.cbCarregamento = ajuda.addItem(wx.CheckBox(self, label="Som ao terminar de carregar páginas (pad)"))
+        self.cbCarregamento = ajuda.addItem(wx.CheckBox(self, label="Som ao terminar de carregar páginas"))
         self.cbCarregamento.SetValue(c["carregamento"])
-        self.cbDigitacao = ajuda.addItem(wx.CheckBox(self, label="Sons de bateria ao digitar"))
+        self.cbDigitacao = ajuda.addItem(wx.CheckBox(self, label="Sons ao digitar"))
         self.cbDigitacao.SetValue(c["digitacao"])
-        self.cbEnter = ajuda.addItem(wx.CheckBox(self, label="Som de piano ao apertar Enter"))
+        self.cbEnter = ajuda.addItem(wx.CheckBox(self, label="Som ao apertar Enter"))
         self.cbEnter.SetValue(c["enter"])
         self.cbFoco = ajuda.addItem(wx.CheckBox(
             self, label="Sons ao mover o foco (Tab e setas): botão, link, caixa de texto, lista, título..."))
         self.cbFoco.SetValue(c["foco"])
-        self.btnTestar = ajuda.addItem(wx.Button(self, label="Ouvir exemplo"))
+        self.btnTestar = ajuda.addItem(wx.Button(self, label="Ouvir exemplo do conjunto escolhido"))
         self.btnTestar.Bind(wx.EVT_BUTTON, self.onTestar)
 
+    def _temaEscolhido(self):
+        return TEMAS[self.escolhaTema.GetSelection()][0]
+
     def onTestar(self, evento):
-        aplicarVolume(self.spinVolume.GetValue())
-        tocar("abrir")
-        wx.CallLater(1400, tocar, "carregou")
-        wx.CallLater(3300, tocar, "enter")
+        tema = self._temaEscolhido()
+        aplicarVolume(self.spinVolume.GetValue(), tema)
+        tocar("abrir", tema)
+        wx.CallLater(1400, tocar, "botao", tema)
+        wx.CallLater(2000, tocar, "caixa_marcada", tema)
+        wx.CallLater(2700, tocar, "enter", tema)
 
     def onSave(self):
         c = _conf()
         c["ligado"] = self.cbLigado.GetValue()
+        c["tema"] = self._temaEscolhido()
         c["volume"] = self.spinVolume.GetValue()
         c["abertura"] = self.cbAbertura.GetValue()
         c["carregamento"] = self.cbCarregamento.GetValue()
