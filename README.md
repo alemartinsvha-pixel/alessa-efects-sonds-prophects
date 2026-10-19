@@ -43,10 +43,14 @@ Você pode mudar os atalhos em Preferências, Comandos de entrada, categoria "Al
 
 Os sons do conjunto profético ficam na pasta `sons`, e os dos outros conjuntos em subpastas de `sons`, em formato WAV. Para criar um conjunto novo, crie uma subpasta com os mesmos nomes de arquivo e acrescente a pasta na lista `TEMAS` do arquivo do plugin. Para usar um som seu, substitua o arquivo com o mesmo nome. Os scripts `gerar_sons.py` e `gerar_temas.py` mostram como os sons foram sintetizados (Python com NumPy).
 
+## Em páginas web
+
+Ao navegar com as setas e com as teclas de navegação rápida (H, K, B, F e outras) no modo de navegação do NVDA, o complemento toca o som do elemento em que o cursor para (título, link, botão, caixa de seleção, caixa de texto e outros). Há uma opção na janela de configurações para ligar ou desligar isso.
+
 ## Limitações conhecidas
 
-- Os sons por tipo de elemento tocam quando o foco muda de verdade (Tab, setas em listas e menus). Ao navegar pela página com as setas no modo de navegação do NVDA, o foco não muda e esses sons não tocam.
 - O som de carregamento de páginas depende de um evento que nem todas as páginas disparam.
+- Em linhas que misturam vários elementos, toca um som só, escolhido por prioridade (caixa de seleção, botão, link, caixa de texto, controle, aba, menu, título, lista).
 
 ## Licença
 

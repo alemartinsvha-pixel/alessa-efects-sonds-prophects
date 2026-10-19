@@ -15,6 +15,9 @@ import globalVars
 import gui
 import nvwave
 import scriptHandler
+import speech
+import textInfos
+import treeInterceptorHandler
 import ui
 import wx
 from gui import guiHelper
@@ -65,6 +68,24 @@ for _nome, _som in _ROLES:
     _papel = getattr(controlTypes.Role, _nome, None)
     if _papel is not None:
         MAPA_SONS[_papel] = _som
+
+# Prioridade quando um trecho da pagina tem varios elementos (ex.: titulo com link dentro).
+_PRIORIDADE = ["caixa", "botao", "link", "edicao", "controle", "aba", "menu", "titulo", "lista"]
+
+# Elementos "recipiente": nao tocam o som generico ao receber o foco.
+_CONTAINERS = set()
+for _nome in ("WINDOW", "PANE", "FRAME", "DIALOG", "APPLICATION", "DOCUMENT", "SECTION", "GROUPING",
+              "FORM", "TOOLBAR", "STATUSBAR", "MENUBAR", "POPUPMENU", "TREEVIEW", "LIST", "TABCONTROL",
+              "LANDMARK", "EMBEDDEDOBJECT", "INTERNALFRAME", "BORDER", "UNKNOWN", "TABLE", "TERMINAL"):
+    _papel = getattr(controlTypes.Role, _nome, None)
+    if _papel is not None:
+        _CONTAINERS.add(_papel)
+
+# Motivos de fala que indicam navegacao com setas ou teclas de navegacao rapida.
+_RAZOES_NAVEGACAO = tuple(
+    getattr(controlTypes.OutputReason, _n) for _n in ("CARET", "QUICKNAV")
+    if hasattr(controlTypes.OutputReason, _n)
+)
 # -------------------------------
 
 config.conf.spec[SECAO] = {
@@ -75,6 +96,8 @@ config.conf.spec[SECAO] = {
     "digitacao": "boolean(default=True)",
     "enter": "boolean(default=True)",
     "foco": "boolean(default=True)",
+    "navegacao": "boolean(default=True)",
+    "generico": "boolean(default=True)",
     "tema": 'string(default="profetico")',
 }
 
@@ -160,6 +183,12 @@ class PainelAlessa(SettingsPanel):
         self.cbFoco = ajuda.addItem(wx.CheckBox(
             self, label="Sons ao mover o foco (Tab e setas): botão, link, caixa de texto, lista, título..."))
         self.cbFoco.SetValue(c["foco"])
+        self.cbNavegacao = ajuda.addItem(wx.CheckBox(
+            self, label="Sons ao navegar com as setas e teclas de navegação rápida em páginas web"))
+        self.cbNavegacao.SetValue(c["navegacao"])
+        self.cbGenerico = ajuda.addItem(wx.CheckBox(
+            self, label="Som genérico para outros elementos que recebem o foco"))
+        self.cbGenerico.SetValue(c["generico"])
         self.btnTestar = ajuda.addItem(wx.Button(self, label="Ouvir exemplo do conjunto escolhido"))
         self.btnTestar.Bind(wx.EVT_BUTTON, self.onTestar)
 
@@ -184,6 +213,8 @@ class PainelAlessa(SettingsPanel):
         c["digitacao"] = self.cbDigitacao.GetValue()
         c["enter"] = self.cbEnter.GetValue()
         c["foco"] = self.cbFoco.GetValue()
+        c["navegacao"] = self.cbNavegacao.GetValue()
+        c["generico"] = self.cbGenerico.GetValue()
         aplicarVolume()
 
 
@@ -193,15 +224,89 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
         self._ultimo = 0.0
         self._ultimoFoco = 0.0
         self._ultimoAbrir = 0.0
+        self._originais = []
         aplicarVolume()
         NVDASettingsDialog.categoryClasses.append(PainelAlessa)
+        self._instalarGancho()
 
     def terminate(self):
+        self._removerGancho()
         try:
             NVDASettingsDialog.categoryClasses.remove(PainelAlessa)
         except Exception:
             pass
         super().terminate()
+
+    # ---- Navegacao com setas em paginas web (modo de navegacao) ----
+    def _instalarGancho(self):
+        """Acompanha a fala do NVDA ao mover o cursor em paginas web, onde o foco nao muda."""
+        try:
+            for modulo in (speech, getattr(speech, "speech", None)):
+                if modulo is None or not hasattr(modulo, "speakTextInfo"):
+                    continue
+                original = modulo.speakTextInfo
+                if getattr(original, "_alessa", False):
+                    continue
+
+                def novo(info, *args, _orig=original, **kwargs):
+                    try:
+                        self._aoFalarTexto(info, kwargs)
+                    except Exception:
+                        log.debugWarning("Alessa Effects: erro no gancho de navegacao", exc_info=True)
+                    return _orig(info, *args, **kwargs)
+
+                novo._alessa = True
+                modulo.speakTextInfo = novo
+                self._originais.append((modulo, original))
+        except Exception:
+            log.error("Alessa Effects: nao foi possivel instalar o gancho de navegacao", exc_info=True)
+
+    def _removerGancho(self):
+        for modulo, original in self._originais:
+            try:
+                modulo.speakTextInfo = original
+            except Exception:
+                pass
+        self._originais = []
+
+    def _aoFalarTexto(self, info, kwargs):
+        if kwargs.get("reason") not in _RAZOES_NAVEGACAO:
+            return
+        if not self._ativo("navegacao"):
+            return
+        if not isinstance(getattr(info, "obj", None), treeInterceptorHandler.TreeInterceptor):
+            return
+        agora = time.monotonic()
+        if agora - self._ultimoFoco < INTERVALO_FOCO:
+            return
+        som = self._somDoTrecho(info)
+        if som:
+            self._ultimoFoco = agora
+            tocar(som)
+
+    @staticmethod
+    def _somDoTrecho(info):
+        encontrados = {}
+        for item in info.getTextWithFields():
+            if isinstance(item, textInfos.FieldCommand) and item.command == "controlStart":
+                campo = item.field
+                base = MAPA_SONS.get(campo.get("role"))
+                if not base:
+                    continue
+                final = base
+                if base == "caixa":
+                    estados = campo.get("states") or ()
+                    marcada = controlTypes.State.CHECKED in estados
+                    final = "caixa_marcada" if marcada else "caixa_desmarcada"
+                encontrados[base] = final
+        for base in _PRIORIDADE:
+            if base in encontrados:
+                return encontrados[base]
+        return None
+
+    @staticmethod
+    def _eFocalizavel(obj):
+        return controlTypes.State.FOCUSABLE in obj.states and obj.role not in _CONTAINERS
 
     @staticmethod
     def _ativo(chave):
@@ -224,6 +329,8 @@ class GlobalPlugin(globalPluginHandler.GlobalPlugin):
                 if som == "caixa":
                     marcada = controlTypes.State.CHECKED in obj.states
                     som = "caixa_marcada" if marcada else "caixa_desmarcada"
+                elif som is None and _conf()["generico"] and self._eFocalizavel(obj):
+                    som = "controle"
                 if som:
                     self._ultimoFoco = agora
                     tocar(som)
